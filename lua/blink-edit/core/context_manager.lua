@@ -60,6 +60,10 @@ local function get_attached_clients(bufnr)
 end
 
 local function client_supports_method(client, method)
+  -- Nvim 0.11+ made supports_method a method; the dot-call form is deprecated
+  if vim.fn.has("nvim-0.11") == 1 then
+    return client:supports_method(method)
+  end
   if client.supports_method then
     return client.supports_method(method)
   end
@@ -75,14 +79,15 @@ local function client_supports_method(client, method)
   return false
 end
 
-local function buffer_supports_method(bufnr, method)
+--- First attached client that supports `method`, or nil
+local function get_supporting_client(bufnr, method)
   local clients = get_attached_clients(bufnr)
   for _, client in ipairs(clients) do
     if client_supports_method(client, method) then
-      return true
+      return client
     end
   end
-  return false
+  return nil
 end
 
 -- =============================================================================
@@ -353,7 +358,8 @@ function M.collect_lsp_locations(
   current_window_start,
   current_window_end
 )
-  if not buffer_supports_method(bufnr, method) then
+  local client = get_supporting_client(bufnr, method)
+  if not client then
     if not state.has_lsp_unsupported_warned(bufnr, method) then
       state.mark_lsp_unsupported_warned(bufnr, method)
       if vim.g.blink_edit_debug then
@@ -363,7 +369,8 @@ function M.collect_lsp_locations(
     return {}
   end
 
-  local params = vim.lsp.util.make_position_params()
+  -- Nvim 0.11+ requires the position encoding; use the responding client's
+  local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
   if method == "textDocument/references" then
     params.context = { includeDeclaration = false }
   end
